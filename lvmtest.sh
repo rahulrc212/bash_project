@@ -5,6 +5,23 @@
 USER_NAME=$(id -un)
 HOST_FILE="${HOME}/lvmhosts.txt"
 DATE=$(date +%Y-%m-%d)
+SERVER_IP=$(cat "${HOST_FILE}" | awk '{print $1}')
+
+# Fucntion for displaying the current pv's lv's and vg's
+
+function lvmdisplay()
+{
+for ip in "${SERVER_IP}"
+ do
+   ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${ip}" ip="${ip}"  'bash -s' << 'ENDSSH'
+   echo ""
+   echo  "Displaying the current pv's lv's and vg's - ${ip}"
+   echo "=========================================================";echo ""
+   sudo pvs ; echo "=============================================" ; sudo lvs ; echo "============================================="  ; sudo vgs ; echo "============================================="; echo ""
+   sudo pvdisplay ; echo "=======================" ; sudo lvdisplay ; echo "============================="  ; sudo vgdisplay ; echo "=============================" 
+ENDSSH
+done
+}
 
 
 # Testing User Privilege 
@@ -29,7 +46,6 @@ else
       exit 1
 fi
 fi
-
 
 while :
   do
@@ -59,7 +75,8 @@ while :
                         read -p 'Enter the action number which you want to perform: ' ACTION
      case $ACTION in
                         1)
-                        echo '1'
+ 			echo ""
+                        lvmdisplay
                         exit;;
                         2)
 			echo '2'
