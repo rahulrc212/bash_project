@@ -5,13 +5,13 @@
 USER_NAME=$(id -un)
 HOST_FILE="${HOME}/lvmhosts.txt"
 DATE=$(date +%Y-%m-%d)
-SERVER_IP=$(cat "${HOST_FILE}" | awk '{print $1}')
+SSH_LOGIN=$(ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no')
 
 # Fucntion for displaying the current pv's lv's and vg's
 
 function lvmdisplay()
 {
-for ip in "${SERVER_IP}"
+for ip in $(cat "${HOST_FILE}")
  do
    ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${ip}" ip="${ip}"  'bash -s' << 'ENDSSH'
    echo ""
@@ -19,6 +19,44 @@ for ip in "${SERVER_IP}"
    echo "=========================================================";echo ""
    sudo pvs ; echo "=============================================" ; sudo lvs ; echo "============================================="  ; sudo vgs ; echo "============================================="; echo ""
    sudo pvdisplay ; echo "=======================" ; sudo lvdisplay ; echo "============================="  ; sudo vgdisplay ; echo "=============================" 
+ENDSSH
+done
+}
+
+# Function for displaying the available free disks to create PV's
+
+function showdisks()
+{
+for ip in $(cat "${HOST_FILE}")
+ do
+     ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${ip}" ip="${ip}"  'bash -s' << 'ENDSSH'
+     echo ""; echo "NAME MAJ:MIN RM SIZE RO TYPE MOUNTPOINT - Server - ${ip}"; echo "================================================================";
+     SHOW_DISKS=$(sudo /usr/bin/lsblk | sed 1d | grep "disk" | awk -F " " '{print $1}')
+     for i in $(echo "${SHOW_DISKS}" | tr ' ' '\n')
+      do
+          sudo /usr/sbin/pvdisplay /dev/"${i}" > /dev/null 2>&1
+           RESULT1=$(echo ${?})
+             if [[ "${RESULT1}" != "0" ]]
+                then
+                  sudo /usr/bin/df -hT | grep -i "/dev/${i}" > /dev/null 2>&1
+                  RESULT2=$(echo ${?})
+                    if [[ "${RESULT2}" != "0" ]]
+                       then
+                          DISK_FOUND=$(sudo /usr/bin/lsblk /dev/${i} | sed 1d)
+                          echo "${DISK_FOUND}"
+                       else
+                          echo "Device $i is in use" > /dev/null 2>&1
+                    fi
+                else
+                  echo "Device $i is in use" > /dev/null 2>&1
+             fi
+      done
+if [[ -z "${DISK_FOUND}" ]]
+then
+echo "No Disk Found"
+echo -ne "\n"
+fi
+
 ENDSSH
 done
 }
@@ -79,7 +117,7 @@ while :
                         lvmdisplay
                         exit;;
                         2)
-			echo '2'
+			showdisks
                         exit;;
                         3)
 			echo '3'
