@@ -3,44 +3,51 @@
 # Declaring variable
 
 USER_NAME=$(id -un)
-HOST_FILE="${HOME}/lvmhosts.txt"
 DATE=$(date +%Y-%m-%d)
 SSH_LOGIN=$(ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no')
+
+function ipaddress ()
+{
+read -p 'Enter the IP Address of server to perform the action: ' IP
+if [[ -z "${IP}" ]]
+then
+  echo "No IP Address found, Please provide IP Address of server to perform the action"
+  exit 1
+fi
+}
+
 
 # Fucntion for displaying the current pv's lv's and vg's
 
 function lvmdisplay()
 {
-for ip in $(cat "${HOST_FILE}")
- do
-   ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${ip}" ip="${ip}"  'bash -s' << 'ENDSSH'
+   ipaddress
+   ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${IP}" IP_VAR="${IP}" 'bash -s' << 'ENDSSH'
    echo ""
-   echo  "Displaying the current pv's lv's and vg's - ${ip}"
+   echo  "Displaying the current pv's lv's and vg's - ${IP_VAR}"
    echo "=========================================================";echo ""
    sudo pvs ; echo "=============================================" ; sudo lvs ; echo "============================================="  ; sudo vgs ; echo "============================================="; echo ""
    sudo pvdisplay ; echo "=======================" ; sudo lvdisplay ; echo "============================="  ; sudo vgdisplay ; echo "=============================" 
 ENDSSH
-done
 }
 
 # Function for displaying the available free disks to create PV's
 
 function showdisks()
 {
-for ip in $(cat "${HOST_FILE}")
- do
-     ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${ip}" ip="${ip}"  'bash -s' << 'ENDSSH'
+     ipaddress
+     ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${IP}" IP_VAR="${IP}"  'bash -s' << 'ENDSSH'
      echo ""; echo "NAME MAJ:MIN RM SIZE RO TYPE MOUNTPOINT - Server - ${ip}"; echo "================================================================";
      SHOW_DISKS=$(sudo /usr/bin/lsblk | sed 1d | grep "disk" | awk -F " " '{print $1}')
      for i in $(echo "${SHOW_DISKS}" | tr ' ' '\n')
       do
           sudo /usr/sbin/pvdisplay /dev/"${i}" > /dev/null 2>&1
            RESULT1=$(echo ${?})
-             if [[ "${RESULT1}" != "0" ]]
+             if [[ "${RESULT1}" -ne "0" ]]
                 then
                   sudo /usr/bin/df -hT | grep -i "/dev/${i}" > /dev/null 2>&1
                   RESULT2=$(echo ${?})
-                    if [[ "${RESULT2}" != "0" ]]
+                    if [[ "${RESULT2}" -ne "0" ]]
                        then
                           DISK_FOUND=$(sudo /usr/bin/lsblk /dev/${i} | sed 1d)
                           echo "${DISK_FOUND}"
@@ -58,7 +65,6 @@ echo -ne "\n"
 fi
 
 ENDSSH
-done
 }
 
 
@@ -68,21 +74,6 @@ if [[ "${USER_NAME}" = "root" ]];
 then
    echo "Run the command with a non-root User"
    exit 1
-fi
-
-
-if [[ ! -f "${HOST_FILE}" ]];
-then
-   echo "Hostlist file does not exists. Create file ${HOST_FILE} in the ${USER_NAME} home directory with the list of servers"
-   exit 1
-else
-   if [[ -s "${HOST_FILE}" ]];
-   then 
-      echo "${HOST_FILE} file not Empty" > /dev/null 2>&1
-   else
-      echo "${HOST_FILE} should not be Empty. Add the hostname to perform the task in the ${HOST_FILE}"
-      exit 1
-fi
 fi
 
 while :
