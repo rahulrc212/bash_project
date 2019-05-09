@@ -1,5 +1,5 @@
 #!/bin/bash
-
+#
 # Declaring variable
 
 USER_NAME=$(id -un)
