@@ -6,16 +6,57 @@ USER_NAME=$(id -un)
 DATE=$(date +%Y-%m-%d)
 SSH_LOGIN=$(ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no')
 
+# Function for IpAddress 
+
 function ipaddress ()
 {
-read -p 'Enter the IP Address of server to perform the action: ' IP
-if [[ -z "${IP}" ]]
-then
-  echo "No IP Address found, Please provide IP Address of server to perform the action"
-  exit 1
-fi
+ read -p 'Enter the IP Address of server to perform the action: ' IP
+ if [[ -z "${IP}" ]]
+ then
+   echo "No IP Address found, Please provide IP Address of server to perform the action"
+   exit 1
+ fi
 }
 
+
+# Function for creating physical volume
+
+function pvcreate ()
+{
+  ipaddress
+  read -p 'Enter the Ticket/Change number: ' CN
+  read -p 'Enter the Disks to create PV [ If multiple disks to add ,then provide with comma seperated values Ex: /dev/sdb,/dev/sdc ]: ' PVD 
+  ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${IP}" UN="${USER_NAME}" CN="${CN}" IP="${IP}" PV="${PVD}" 'bash -s' << 'ENDSSH'
+  IFS=',' read -ra StringValue<<< "${PV}"
+  date=$(date +%Y-%m-%d)
+  touch pvcreate.log_"${date}"
+  echo -ne "Username: ${UN} \nIPAddress: ${IP} \nChangeNumber: ${CN} \nDisk Name: ${PV} \n" >  pvcreate.log_"${date}"
+  for i in "${StringValue[@]}"
+      do
+          sudo /usr/sbin/pvdisplay "${i}" > /dev/null 2>&1
+           RESULT1=$(echo ${?})
+             if [[ "${RESULT1}" -ne "0" ]]
+                then
+                  sudo /usr/bin/df -hT | grep -i "${i}" > /dev/null 2>&1
+                  RESULT2=$(echo ${?})
+                    if [[ "${RESULT2}" -ne "0" ]]
+                       then
+                          sudo /usr/sbin/pvcreate ${i} &>> pvcreate.log_"${date}"
+                             if [[ "${?}" -eq "0" ]]
+                                then 
+                                   echo "Physical volume ${i} successfully created."
+                                else
+                                   echo "Physical volume ${i} not created successfully."
+                             fi
+                       else
+                          echo "Request Not succeded, Device ${i} is in use" | tee pvcreate.log_"${date}"
+                    fi
+                else
+                  echo "Request Not succeded, Device ${i} is in use" | tee pvcreate.log_"${date}"
+             fi
+      done
+ENDSSH
+}
 
 # Fucntion for displaying the current pv's lv's and vg's
 
@@ -37,7 +78,7 @@ function showdisks()
 {
      ipaddress
      ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${IP}" IP_VAR="${IP}"  'bash -s' << 'ENDSSH'
-     echo ""; echo "NAME MAJ:MIN RM SIZE RO TYPE MOUNTPOINT - Server - ${ip}"; echo "================================================================";
+     echo ""; echo "NAME MAJ:MIN RM SIZE RO TYPE MOUNTPOINT - Server - ${IP_VAR}"; echo "================================================================";
      SHOW_DISKS=$(sudo /usr/bin/lsblk | sed 1d | grep "disk" | awk -F " " '{print $1}')
      for i in $(echo "${SHOW_DISKS}" | tr ' ' '\n')
       do
@@ -49,7 +90,7 @@ function showdisks()
                   RESULT2=$(echo ${?})
                     if [[ "${RESULT2}" -ne "0" ]]
                        then
-                          DISK_FOUND=$(sudo /usr/bin/lsblk /dev/${i} | sed 1d)
+                          DISK_FOUND=$(sudo fdisk -l | grep ${i} | awk -F " " {'print $2 $3 $4'})
                           echo "${DISK_FOUND}"
                        else
                           echo "Device $i is in use" > /dev/null 2>&1
@@ -111,7 +152,7 @@ while :
 			showdisks
                         exit;;
                         3)
-			echo '3'
+			pvcreate
                         exit;;
                         4)
 			echo '4'
