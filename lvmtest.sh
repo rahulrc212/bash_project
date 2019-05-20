@@ -14,10 +14,59 @@ function ipaddress ()
  if [[ -z "${IP}" ]]
  then
    echo "No IP Address found, Please provide IP Address of server to perform the action"
-   exit 1
+   ipaddress
  fi
 }
 
+
+# function for extending volume group
+
+function vgextend ()
+{
+ ipaddress
+ read -p 'Enter the Volume group Name to extend: ' VG
+ read -p "Enter the physical volume Disks to extend in the ${VG} group [ Ex: /dev/sdb,/dev/sdc ]: " PVDS
+ ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${IP}" UN="${USER_NAME}" VG="${VG}" IP="${IP}" PVDS="${PVDS}" 'bash -s' << 'ENDSSH'
+ IFS=',' read -ra StringValue<<< "${PVDS}"
+ date=$(date +%Y-%m-%d)
+ err=0 
+ for i in "${StringValue[@]}"
+     do
+       PV_CHECK=$(sudo /usr/sbin/pvdisplay ${i} | grep "Allocatable" | xargs | awk -F " " {'print $2'})
+         if [[ "${PV_CHECK}" = "NO" ]]
+            then
+                sudo /usr/sbin/vgdisplay "${VG}" > /dev/null 2>&1
+                VGRESULT=$(echo ${?})
+                  if [[ "${VGRESULT}" -eq "0" ]]
+                      then
+                         sudo /usr/sbin/vgextend "${VG}" "${i}" > /dev/null 2>&1
+                             if [[ "${?}" -eq "0" ]]
+                                then 
+                                   echo "Physical volume ${i} is successfully added to the volume group ${VG}." | tee -a lvm.log_"${date}"
+                                else
+                                   echo "Physical volume ${i} is not successfully added to the volume group ${VG}." 
+                                   err=1
+                             fi
+                      else
+                        echo "Volume group ${VG} not found" |  tee -a lvm.log_"${date}"
+                        exit 1
+                  fi
+             else
+               echo "Request Not succeded, Physical volume ${i} is already Allocated/Not found" | tee -a lvm.log_"${date}"
+               exit 1
+         fi
+      done
+ if [[ "${err}" -eq "1" ]]
+    then
+      echo "Volume group ${VG} is not successfully extended"
+    else
+      echo "Volume group ${VG} is successfully extended" | tee -a lvm.log_"${date}"
+      echo "==========================================="
+      echo "sudo vgs"
+ fi
+     
+ENDSSH
+}
 
 # Function for creating physical volume
 
@@ -29,8 +78,7 @@ function pvcreate ()
   ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${IP}" UN="${USER_NAME}" CN="${CN}" IP="${IP}" PV="${PVD}" 'bash -s' << 'ENDSSH'
   IFS=',' read -ra StringValue<<< "${PV}"
   date=$(date +%Y-%m-%d)
-  touch pvcreate.log_"${date}"
-  echo -ne "Username: ${UN} \nIPAddress: ${IP} \nChangeNumber: ${CN} \nDisk Name: ${PV} \n" >  pvcreate.log_"${date}"
+  echo -ne "Username: ${UN} \nIPAddress: ${IP} \nChangeNumber: ${CN} \nDisk Name: ${PV} \n" >  lvm.log_"${date}"
   for i in "${StringValue[@]}"
       do
           sudo /usr/sbin/pvdisplay "${i}" > /dev/null 2>&1
@@ -41,7 +89,7 @@ function pvcreate ()
                   RESULT2=$(echo ${?})
                     if [[ "${RESULT2}" -ne "0" ]]
                        then
-                          sudo /usr/sbin/pvcreate ${i} &>> pvcreate.log_"${date}"
+                          sudo /usr/sbin/pvcreate "${i}" &>> lvm.log_"${date}"
                              if [[ "${?}" -eq "0" ]]
                                 then 
                                    echo "Physical volume ${i} successfully created."
@@ -49,28 +97,15 @@ function pvcreate ()
                                    echo "Physical volume ${i} not created successfully."
                              fi
                        else
-                          echo "Request Not succeded, Device ${i} is in use" | tee pvcreate.log_"${date}"
+                          echo "Request Not succeded, Device ${i} is in use" | tee -a  lvm.log_"${date}"
                     fi
                 else
-                  echo "Request Not succeded, Device ${i} is in use" | tee pvcreate.log_"${date}"
+                  echo "Request Not succeded, Device ${i} is in use" | tee -a lvm.log_"${date}"
              fi
       done
 ENDSSH
 }
 
-# Fucntion for displaying the current pv's lv's and vg's
-
-function lvmdisplay()
-{
-   ipaddress
-   ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${IP}" IP_VAR="${IP}" 'bash -s' << 'ENDSSH'
-   echo ""
-   echo  "Displaying the current pv's lv's and vg's - ${IP_VAR}"
-   echo "=========================================================";echo ""
-   sudo pvs ; echo "=============================================" ; sudo lvs ; echo "============================================="  ; sudo vgs ; echo "============================================="; echo ""
-   sudo pvdisplay ; echo "=======================" ; sudo lvdisplay ; echo "============================="  ; sudo vgdisplay ; echo "=============================" 
-ENDSSH
-}
 
 # Function for displaying the available free disks to create PV's
 
@@ -109,6 +144,20 @@ ENDSSH
 }
 
 
+# Fucntion for displaying the current pv's lv's and vg's
+
+function lvmdisplay()
+{
+   ipaddress
+   ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${IP}" IP_VAR="${IP}" 'bash -s' << 'ENDSSH'
+   echo ""
+   echo  "Displaying the current pv's lv's and vg's - ${IP_VAR}"
+   echo "=========================================================";echo ""
+   sudo pvs ; echo "=============================================" ; sudo vgs ; echo "============================================="  ; sudo lvs ; echo "============================================="; echo ""
+ENDSSH
+}
+
+
 # Testing User Privilege 
 
 if [[ "${USER_NAME}" = "root" ]]; 
@@ -130,17 +179,11 @@ while :
                         echo ""
                         echo " 3. Create Physical Volume"
                         echo ""
-                        echo " 4. Create Volume Group"
+                        echo " 4. Extend Volume Group"
                         echo ""
-                        echo " 5. Create Logical Volume"
+                        echo " 5. Extend Logical Volume"
                         echo ""
-                        echo " 6. Create Filesystem"
-                        echo ""
-                        echo " 7. Extend Existing Filesystem"
-                        echo ""
-                        echo " 8. Mount Filesystem"
-                        echo ""
-			echo " 9. Exit"
+			echo " 6. Exit"
                         echo ""
                         read -p 'Enter the action number which you want to perform: ' ACTION
      case $ACTION in
@@ -155,21 +198,12 @@ while :
 			pvcreate
                         exit;;
                         4)
-			echo '4'
+			vgextend
                         exit;;
                         5)
-			echo '5'
+			lvextend
                         exit;;
                         6)
-			echo '6'
-                        exit;;
-                        7)
-                        echo '7'
-                        exit;;
-                        8)
-                        echo '8'
-                        exit;;
-                        9)
                         exit;;
                         *)
                         echo "${ACTION} is not a valid option"
