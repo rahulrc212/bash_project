@@ -18,6 +18,45 @@ function ipaddress ()
  fi
 }
 
+# function for extending logical volume
+
+function lvextend ()
+{
+ ipaddress
+ read -p 'Enter the File System name to extend [ Ex: /dev/mapper/vg_01-lv_02]: ' FS
+ read -p 'Enter the size to extend ${FS} [ Ex: 2G ]: ' SZ
+ ssh -q -o ConnectTimeout=30 -o 'StrictHostKeyChecking no' -T "${USER_NAME}"@"${IP}" FS="${FS}" SIZE="${SZ}" 'bash -s' << 'ENDSSH'
+ CHK_FS=$(sudo df -hT | grep ${FS}) > /dev/null 2>&1
+ CHK_RESULT=$(echo ${?})
+ if [[ "${CHK_RESULT}" -eq 0 ]]
+    then
+      sudo lvextend -L +"${SIZE}" "${FS}" > /dev/null 2>&1
+        if [[ "${?}" -eq 0 ]]
+           then 
+             sudo resize2fs "${FS}"  > /dev/null 2>&1
+               if [[ "${?}" -eq 0 ]]
+                  then
+                    echo -ne "\n";echo "Logical volume ${FS} extended succesfully"
+                    echo -ne "\n";echo "Old File system Size";echo "====================" 
+                    echo ; echo "Filesystem              Type      Size  Used Avail Use% Mounted on"
+                    echo "------------------------------------------------------------------"
+                    echo "${CHK_FS}"
+                    echo -ne "\n";echo "New File system Size";echo "====================" 
+                    echo ; echo "Filesystem              Type      Size  Used Avail Use% Mounted on"
+                    echo "------------------------------------------------------------------"
+                    sudo df -hT | grep "${FS}" 
+                  else
+                    echo "Logical volume ${FS} not extended succesfully"
+               fi
+            else
+              echo "lvextend not happened successfully. Check the logs"
+              exit 1
+        fi
+     else
+       echo "File System ${FS} not found on system"
+ fi
+ENDSSH
+}
 
 # function for extending volume group
 
